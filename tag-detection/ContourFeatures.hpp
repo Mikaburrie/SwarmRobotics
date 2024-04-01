@@ -45,10 +45,11 @@ struct ContourFeatures {
 
         // Find minimum enclosing triangle and trianglularity of contour
         cv::minEnclosingTriangle(hull, minTriangle);
-        if (minTriangle.size() == 0) std::cout << "uh oh" << std::endl;
-        minTriangleCenter = (minTriangle.at(0) + minTriangle.at(1) + minTriangle.at(2))/3.0;
-        triangularity = area/cv::contourArea(minTriangle);
-
+        if (minTriangle.size() == 3) {
+            minTriangleCenter = (minTriangle.at(0) + minTriangle.at(1) + minTriangle.at(2))/3.0;
+            triangularity = area/cv::contourArea(minTriangle);
+        }
+        
         // fitEllipseAMS requires 5 points
         if (hull.size() < 5) return;
 

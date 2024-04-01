@@ -41,12 +41,24 @@ struct LogitechC270HD: public cv::VideoCapture {
         set(cv::CAP_PROP_EXPOSURE, exposure);
     }
 
+    int getExposure() {
+        return get(cv::CAP_PROP_EXPOSURE);
+    }
+
     void setAutoExposure(int enabled) {
         set(cv::CAP_PROP_AUTO_EXPOSURE, 1 + (enabled != 0 ? 2 : 0));
     }
 
+    int getAutoExposure() {
+        return get(cv::CAP_PROP_AUTO_EXPOSURE);
+    }
+
     void setAutoWhiteBalance(int enabled) {
         set(cv::CAP_PROP_AUTO_WB, enabled);
+    }
+
+    int getAutoWhiteBalance() {
+        return get(cv::CAP_PROP_AUTO_WB);
     }
 
 };
