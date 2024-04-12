@@ -1,13 +1,13 @@
-#ifndef COLOR_RANGE_HPP
-#define COLOR_RANGE_HPP
+#ifndef HSV_COLOR_RANGE_HPP
+#define HSV_COLOR_RANGE_HPP
 
 /*
-Defines ColorRange struct - a configurable object for ranging cv arrays
+Defines HSVColorRange struct - a configurable object for ranging hsv opencv arrays
 */
 
 #include "opencv2/core.hpp"
 
-struct ColorRange {
+struct HSVColorRange {
     int hue;
     int range;
     int saturation;
@@ -15,7 +15,7 @@ struct ColorRange {
     cv::Scalar low;
     cv::Scalar high;
 
-    ColorRange(int hue, int range, int saturation, int value) :
+    HSVColorRange(int hue, int range, int saturation, int value) :
     hue(hue), range(range), saturation(saturation), value(value)
     { update(); }
 

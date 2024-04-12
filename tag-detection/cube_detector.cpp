@@ -4,24 +4,24 @@
 #include "opencv2/opencv.hpp"
 
 #include "LogitechC270HD.hpp"
-#include "ColorRange.hpp"
+#include "HSVColorRange.hpp"
 #include "ContourFeatures.hpp"
 #include "TagCandidate.hpp"
 
-// Measures in inches
-#define TAG_SIZE 5.0
+// Measure in centimeters
+#define TAG_SIZE 12.7
 
-LogitechC270HD camera(0);
+LogitechC270HD camera(2);
 
 struct Configuration {
     int selectedColor = 0;
-    std::vector<ColorRange> colors {
-        ColorRange(170, 15, 120, 120), // Red
-        ColorRange(8, 7, 110, 240), // Orange
-        ColorRange(21, 7, 140, 190), // Yellow
-        ColorRange(82, 18, 60, 100), // Green
-        ColorRange(111, 20, 170, 200), // Blue
-        ColorRange(133, 10, 130, 160) // Purple / violet
+    std::vector<HSVColorRange> colors {
+        HSVColorRange(170, 15, 120, 120), // Red
+        HSVColorRange(14, 7, 110, 160), // Orange
+        HSVColorRange(27, 7, 120, 160), // Yellow
+        HSVColorRange(82, 18, 60, 100), // Green
+        HSVColorRange(111, 20, 130, 160), // Blue
+        HSVColorRange(140, 10, 60, 110) // Purple / violet
     };
     double areaThreshold = 25;
     double ellipseThreshold = 0.85;
@@ -30,8 +30,22 @@ struct Configuration {
     double cornerAreaScaleLimit = 2.5;
     double cornerAngleErrorLimit = CV_PI*25/180;
 
-    ColorRange& color() { return colors.at(selectedColor); }
+    HSVColorRange& color() { return colors.at(selectedColor); }
 } config;
+
+const std::vector<cv::Point3d> tagObjectPoints {
+    cv::Point3d(-TAG_SIZE/2, TAG_SIZE/2, 0),
+    cv::Point3d(TAG_SIZE/2, TAG_SIZE/2, 0),
+    cv::Point3d(TAG_SIZE/2, -TAG_SIZE/2, 0),
+    cv::Point3d(-TAG_SIZE/2, -TAG_SIZE/2, 0)
+};
+
+float cameraParameters[] = {
+    6.7361123292017487e+02, 0.,                     3.1950000000000000e+02,
+    0.,                     6.7361123292017487e+02, 2.3950000000000000e+02,
+    0.,                     0.,                     1.
+};
+cv::Mat cameraMatrix(3, 3, CV_32F, cameraParameters);
 
 void makeWindows();
 void processFrame(const cv::Mat&);
@@ -165,16 +179,16 @@ void processFrame(const cv::Mat& frame) {
     allMask = 0;
 
     // Extract all color features
-    std::vector<std::vector<ContourFeatures>> features;
+    std::vector<std::vector<ContourFeatures>> colorFeatures;
     for (int i = 0; i < config.colors.size(); i++) {
         // Mask image with current color
         cv::Mat colorMask;
         config.colors.at(i).inRange(hsv, colorMask);
 
         // Extract contour features from mask
-        std::vector<ContourFeatures> colorFeatures;
-        getContourFeatures(colorMask, colorFeatures, config.areaThreshold);
-        features.push_back(std::move(colorFeatures));
+        std::vector<ContourFeatures> features;
+        getContourFeatures(colorMask, features, config.areaThreshold);
+        colorFeatures.push_back(std::move(features));
 
         // Add to total mask and display in masking window if color is selected
         allMask += colorMask;
@@ -189,8 +203,9 @@ void processFrame(const cv::Mat& frame) {
 
     // Draw all contour features
     for (int color = 0; color < config.colors.size(); color++) {
-        for (int i = 0; i < features.at(color).size(); i++) {
-            ContourFeatures& cf = features.at(color).at(i);
+        std::vector<ContourFeatures>& features = colorFeatures.at(color);
+        for (int i = 0; i < features.size(); i++) {
+            ContourFeatures& cf = features.at(i);
             bool isEllipse = cf.ellipseness > config.ellipseThreshold;
             bool isTriangle = cf.triangularity > config.triangleThreshold;
 
@@ -206,7 +221,6 @@ void processFrame(const cv::Mat& frame) {
                 cf.drawHull(displayFrame, cv::Scalar(255, 0, 0));
             }
         }
-
     }
 
     // Show masked colors and features
@@ -217,35 +231,96 @@ void processFrame(const cv::Mat& frame) {
     cv::bitwise_and(quarterFrame, quarterFrame, displayFrame, allMask);
 
     // Get tag candidates from contours
-    std::vector<TagCandidate> candidates;
-    getTagCandidates(displayFrame, features.at(0), features.at(3), candidates, config.ellipseThreshold, config.cornerAreaScaleLimit, config.cornerDistanceErrorLimit, config.cornerAngleErrorLimit);
+    std::vector<std::vector<TagCandidate>> tagCandidates {
+        std::vector<TagCandidate>(),
+        std::vector<TagCandidate>(),
+        std::vector<TagCandidate>(),
+        std::vector<TagCandidate>(),
+        std::vector<TagCandidate>(),
+        std::vector<TagCandidate>()
+    };
+    for (int i = 0; i < 3; i++)
+        getTagCandidates(displayFrame, colorFeatures.at(i), colorFeatures.at(i + 3), tagCandidates.at(i), tagCandidates.at(i + 3), config.ellipseThreshold, config.cornerAreaScaleLimit, config.cornerDistanceErrorLimit, config.cornerAngleErrorLimit);
 
-    // Draw candidates
-    for (TagCandidate c: candidates) {
-        ContourFeatures& ellipse = features.at(0).at(c.ellipseIndex);
-        ellipse.drawEllipse(displayFrame, cv::Scalar(255, 255, 255));
-        for (int i = 0; i < c.corners.size(); i++) {
-            ContourFeatures& triangle = features.at(3).at(c.corners.at(i).triangleIndex);
-            cv::putText(displayFrame, std::to_string(triangle.triangularity), triangle.minTriangleCenter, cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255));
-        //    cv::line(displayFrame, ellipse.ellipseRect.center, triangle.minTriangleCenter, cv::Scalar(255, 0, 0));
+    // Vector for storing poses of tags with 4 detected corners
+    std::vector<std::pair<std::vector<double>, std::vector<double>>> tagPoses;
 
-            for (int i = 0; i < 3; i++) {
-                cv::Point diff = triangle.minTriangle.at((i + 1)%3) - triangle.minTriangle.at(i);
-                cv::line(displayFrame, triangle.minTriangle.at(i) - diff, triangle.minTriangle.at(i) + 2*diff, cv::Scalar(0, 255, 0));
+    // For each color
+    for (int color = 0; color < 6; color++) {
+        // Get candidates and features for one color
+        std::vector<TagCandidate>& tcs = tagCandidates.at(color);
+        std::vector<ContourFeatures>& ellipseFeatures = colorFeatures.at(color);
+        std::vector<ContourFeatures>& cornerFeatures = colorFeatures.at((color + 3)%6);
+
+        // Draw candidates and poses
+        for (TagCandidate tc: tcs) {
+            // Stores corners of tag
+            std::vector<cv::Point2d> cornerPoints;
+
+            // Draw tag center
+            ContourFeatures& ellipse = ellipseFeatures.at(tc.ellipseIndex);
+            ellipse.drawEllipse(displayFrame, cv::Scalar(255, 255, 255));
+
+            // Draw tag corners and outline
+            for (int i = 0; i < tc.corners.size(); i++) {
+                CornerCandidate& corner = tc.corners.at(i);
+                ContourFeatures& tri = cornerFeatures.at(corner.triangleIndex);
+                cv::putText(displayFrame, std::to_string((int) (100*tri.triangularity)), tri.minTriangleCenter, cv::FONT_HERSHEY_SIMPLEX, 1, cv::Scalar(255, 255, 255));
+                cv::line(displayFrame, ellipse.ellipseRect.center, tri.minTriangleCenter, cv::Scalar(255, 0, 0));
+
+                // Draw corner triangle
+                for (int j = 0; j < 3; j++) {
+                    cv::Point& p0 = tri.minTriangle.at(j);
+                    cv::Point& p1 = tri.minTriangle.at((j + 1)%3);
+                    cv::Point diff = p1 - p0;
+                    double dist = tc.corners.at(i).edgeDistance[j]*3000;
+                    cv::line(displayFrame, p0 - diff, p0 + 2*diff, cv::Scalar(-100 - dist, 400 - dist, dist - 100));
+                }
+
+                // Draw tag outline on input frame
+                if (tc.corners.size() == 4) {
+                    CornerCandidate& corner2 = tc.corners.at((i + 1)%4);
+                    ContourFeatures& tri2 = cornerFeatures.at(corner2.triangleIndex);
+                    cv::line(frame, 2*tri.minTriangle.at(corner.farIndex), 2*tri2.minTriangle.at(corner2.farIndex), cv::Scalar(0, 255, 255));
+                    
+                    // Add to cornerPoints if first tag
+                    cornerPoints.push_back(2*tri.minTriangle.at(corner.farIndex));
+                }
             }
 
-            // Draw outline on input frame
-            if (c.corners.size() == 4) {
-                ContourFeatures& tri2 = features.at(3).at(c.corners.at((i + 1)%4).triangleIndex);
-                cv::line(frame, 2*triangle.minTriangle.at(c.corners.at(i).farIndex), 2*tri2.minTriangle.at(c.corners.at((i + 1)%4).farIndex), cv::Scalar(255, 255, 255));
+            // If all four corners are present
+            if (cornerPoints.size() == 4) {
+                // Get pose of tag in camera frame
+                std::vector<double> rvec;
+                std::vector<double> tvec;
+                solvePnP(tagObjectPoints, cornerPoints, cameraMatrix, std::vector<double>(), rvec, tvec, false, cv::SOLVEPNP_IPPE_SQUARE);
+
+                // Store pose
+                std::pair<std::vector<double>, std::vector<double>> newPose(std::move(rvec), std::move(tvec));
+                tagPoses.push_back(std::move(newPose));
             }
         }
     }
 
+    // Display pose of tag
+    for (auto pose: tagPoses) {
+        // Draw projection
+        std::vector<cv::Point2d> projectedPoints;
+        cv::projectPoints(tagObjectPoints, pose.first, pose.second, cameraMatrix, std::vector<double>(), projectedPoints);
+        for (int i = 0; i < 4; i++)
+            cv::line(frame, projectedPoints.at(i), projectedPoints.at((i + 1)%4), cv::Scalar(255, 255, 255));
+        cv::drawFrameAxes(frame, cameraMatrix, std::vector<double>(), pose.first, pose.second, 60/pose.second.at(2));
+
+        // Print distance and horizontal angle to camera
+        double angle = atan2(pose.second.at(0), pose.second.at(2));
+        std::cout << "target at (" << pose.second.at(2) << " cm, " << angle << " rad)" <<  std::endl;
+    }
+
+    std::cout << std::endl;
+
+    // Show candidates and geometry
     cv::imshow("candidates", displayFrame);
 
     // Show input frame
     cv::imshow("camera", frame);
-
-    //    solvePnP(objectPoints, imagePoints, cameraMatrix, distCoeffs, rvec, tvec);
 }

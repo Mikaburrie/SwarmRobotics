@@ -7,7 +7,7 @@
 
 struct TagCandidate;
 struct CornerCandidate;
-void getTagCandidates(cv::Mat& displayFrame, const std::vector<ContourFeatures>&, const std::vector<ContourFeatures>&, std::vector<TagCandidate>&);
+void getTagCandidates(cv::Mat& displayFrame, const std::vector<ContourFeatures>&, const std::vector<ContourFeatures>&, std::vector<TagCandidate>&, std::vector<TagCandidate>&, double, double, double, double);
 void getCornerCandidates(const ContourFeatures&, const std::vector<ContourFeatures>&, std::vector<CornerCandidate>&, double, double, double);
 std::pair<int, double> classifyAngleDirection(double, double);
 double wrapToPi(double angle);
@@ -68,24 +68,35 @@ struct CornerCandidate {
 };
 
 // Finds tags from contours
-// TODO: Add cross tag candidate filtering
-void getTagCandidates(cv::Mat& displayFrame, const std::vector<ContourFeatures>& cf0, const std::vector<ContourFeatures>& cf1, std::vector<TagCandidate>& tags, double ellipseThreshold=0.85, double cornerAreaScaleLimit=2.5, double cornerDistanceErrorLimit=0.3, double cornerAngleErrorLimit=(CV_PI/9)) {
-    for (int i0 = 0; i0 < cf0.size(); i0++) {
-        const ContourFeatures& ellipse = cf0.at(i0);
-
+void getTagCandidates(cv::Mat& displayFrame, const std::vector<ContourFeatures>& cf0, const std::vector<ContourFeatures>& cf1, std::vector<TagCandidate>& tags0, std::vector<TagCandidate>& tags1, double ellipseThreshold=0.85, double cornerAreaScaleLimit=2.5, double cornerDistanceErrorLimit=0.3, double cornerAngleErrorLimit=(CV_PI/9)) {
+    for (int i = 0; i < cf0.size(); i++) {
         // Discard if not ellipsoid enough
+        const ContourFeatures& ellipse = cf0.at(i);
         if (ellipse.ellipseness < ellipseThreshold) continue;
 
         // Create candidate
         TagCandidate tag;
         tag.vec = 0;
-        tag.ellipseIndex = i0;
+        tag.ellipseIndex = i;
 
         // Get corner candidates for ellipse
         getCornerCandidates(ellipse, cf1, tag.corners, cornerAreaScaleLimit, cornerDistanceErrorLimit, cornerAngleErrorLimit);
 
         // Store tag
-        tags.push_back(std::move(tag));
+        tags0.push_back(std::move(tag));
+    }
+
+    // Same thing but vectors are swapped
+    for (int i = 0; i < cf1.size(); i++) {
+        const ContourFeatures& ellipse = cf1.at(i);
+        if (ellipse.ellipseness < ellipseThreshold) continue;
+
+        TagCandidate tag;
+        tag.vec = 0;
+        tag.ellipseIndex = i;
+
+        getCornerCandidates(ellipse, cf0, tag.corners, cornerAreaScaleLimit, cornerDistanceErrorLimit, cornerAngleErrorLimit);
+        tags1.push_back(std::move(tag));
     }
 }
 
@@ -109,7 +120,7 @@ void getCornerCandidates(const ContourFeatures& ellipse, const std::vector<Conto
         const ContourFeatures& triangle = triangles.at(triangleIndex);
 
         // Discard if too big
-        if (triangle.area > cornerAreaLimit) continue;
+        if (triangle.area > cornerAreaLimit || triangle.minTriangle.size() != 3) continue;
 
         // Create candidate to calculate suitability of corner
         CornerCandidate corner(triangle.minTriangle, ellipse.ellipseRect, ellipseAngle);
