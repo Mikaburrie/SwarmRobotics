@@ -14,7 +14,7 @@
 //              {
 //                  number dist  - Z distance of detected boid
 //                  number theta  - Angle of detected boid relative to boid
-//                  number heading - Angle of detected boid's direction of movement (0 is going away, +-pi is directly facing)
+//                  number heading - Angle of detected boid's direction (0 is facing towards, +-pi is facing away)
 //              }* (star meaning 0 or more in the list)
 //          ]
 //      - dt
