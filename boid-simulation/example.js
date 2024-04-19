@@ -12,9 +12,9 @@
 //          A list of boids in the detection area via the (hypothetical) vision system
 //          Format: [
 //              {
-//                  Vector2 pos  - Vector containing position of detected boid (x=tangential, y=horizontal)
-//                  Vector2 vel  - Vector containing relative velocity of boid (not implemented)
-//                  number theta - Direction of detected boid relative 
+//                  number dist  - Z distance of detected boid
+//                  number theta  - Angle of detected boid relative to boid
+//                  number heading - Angle of detected boid's direction of movement (0 is going away, +-pi is directly facing)
 //              }* (star meaning 0 or more in the list)
 //          ]
 //      - dt
