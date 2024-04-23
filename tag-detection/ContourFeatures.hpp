@@ -110,7 +110,7 @@ void getContourFeatures(cv::InputArray in, std::vector<ContourFeatures>& feature
     }
 
     // Sort contours by area
-    std::sort(features.begin(), features.end(), [](ContourFeatures a, ContourFeatures b) {
+    std::sort(features.begin(), features.end(), [](const ContourFeatures& a, const ContourFeatures& b) {
         return a.area > b.area;
     });
 }
