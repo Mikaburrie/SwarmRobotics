@@ -11,7 +11,7 @@
 // Measure in centimeters
 #define TAG_SIZE 12.7
 
-LogitechC270HD camera(2);
+LogitechC270HD camera(0);
 
 struct Configuration {
     int selectedColor = 0;
