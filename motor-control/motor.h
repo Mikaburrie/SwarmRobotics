@@ -6,11 +6,12 @@ struct Motor {
     const int gpioPWM; // not to be confused with pigpio's gpioPWM() function
     const int gpioDir;
     const int gpioEncoder;
+    int distance;
 };
 
 // Handles encoder interrupt
 void motorOnEncoderTick(struct Motor* m, int level, uint32_t time) {
-    // Handle tick
+    m->distance++;
 }
 
 void motorInitialize(struct Motor* m, gpioISRFunc_t onEncoderTick) {
@@ -43,6 +44,9 @@ void motorInitialize(struct Motor* m, gpioISRFunc_t onEncoderTick) {
     gpioSetMode(m->gpioEncoder, PI_INPUT);
     gpioSetPullUpDown(m->gpioEncoder, PI_PUD_DOWN);
     gpioSetISRFunc(m->gpioEncoder, EITHER_EDGE, 0, onEncoderTick);
+    
+    // Set default values
+    m->distance = 0;
 }
 
 void motorSetDuty(struct Motor* m, int duty) {

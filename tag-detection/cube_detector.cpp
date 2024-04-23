@@ -8,6 +8,8 @@
 #include "ContourFeatures.hpp"
 #include "TagCandidate.hpp"
 
+#include "../motor-control/motor_command.h"
+
 // Measure in centimeters
 #define TAG_SIZE 12.7
 
@@ -53,6 +55,9 @@ void processFrame(const cv::Mat&);
 int main(int argc, char** argv) {
     // Creates windows for displaying images
     makeWindows();
+    
+    // Open FIFO pipe for motor control
+    openMotorControlFifo();
 
     int key = cv::waitKey(16);
     while (key != 27) { // Exit if Escape is pressed
@@ -64,6 +69,9 @@ int main(int argc, char** argv) {
 
         key = cv::waitKey(16);
     }
+    
+    // Close FIFO pipe
+    closeMotorControlFifo();
 }
 
 void makeWindows() {
@@ -317,6 +325,10 @@ void processFrame(const cv::Mat& frame) {
     }
 
     std::cout << std::endl;
+    
+    // Drive motors if tag is detected
+    if (tagPoses.size() > 0) sendMotorCommand(180, 180);
+    else sendMotorCommand(0, 0);
 
     // Show candidates and geometry
     cv::imshow("candidates", displayFrame);

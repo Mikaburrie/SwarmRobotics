@@ -1,11 +1,13 @@
-LIB=-lpigpio
-MODULES=motor_control
+MODULES=motor_control send_motor_command
 
 .PHONY: all
 all: ${MODULES}
 
 motor_control: motor_control.c
-	gcc -pthread -o $@ $< ${LIB}
+	gcc -pthread -o $@ $< -lpigpio
+	
+send_motor_command: send_motor_command.c
+	gcc -o $@ $<
 
 .PHONY: clean
 clean:

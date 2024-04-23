@@ -6,7 +6,7 @@ MODULES=cube_detector camera_calibration
 all: ${MODULES}
 
 cube_detector: cube_detector.cpp
-	g++ $(INC) -o $@ $< ${LIB}
+	g++ -Wno-psabi $(INC) -o $@ $< ${LIB}
 
 camera_calibration: camera_calibration.cpp
 	g++ $(INC) -o $@ $< ${LIB}
