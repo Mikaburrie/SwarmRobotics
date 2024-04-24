@@ -13,7 +13,7 @@
 // Measure in centimeters
 #define TAG_SIZE 12.7
 
-LogitechC270HD camera(0);
+LogitechC270HD camera(1);
 
 struct Configuration {
     int selectedColor = 0;
@@ -51,6 +51,8 @@ cv::Mat cameraMatrix(3, 3, CV_32F, cameraParameters);
 
 void makeWindows();
 void processFrame(const cv::Mat&);
+void followTheLeader(double distance, double angle);
+
 
 int main(int argc, char** argv) {
     // Creates windows for displaying images
@@ -64,9 +66,9 @@ int main(int argc, char** argv) {
         // Get frame from camera and display
         cv::Mat frame;
         camera >> frame;
-
+        
         processFrame(frame);
-
+        
         key = cv::waitKey(16);
     }
     
@@ -174,6 +176,8 @@ void makeWindows() {
 
 void processFrame(const cv::Mat& frame) {
     // Downscale image and convert from RGB to HSV
+
+    
     cv::Mat blurFrame;
     cv::Mat quarterFrame;
     cv::Mat hsv;
@@ -327,8 +331,11 @@ void processFrame(const cv::Mat& frame) {
     std::cout << std::endl;
     
     // Drive motors if tag is detected
-    if (tagPoses.size() > 0) sendMotorCommand(180, 180);
-    else sendMotorCommand(0, 0);
+    if (tagPoses.size() > 0) {
+        double distance = tagPoses[0].second.at(2);
+        double angle = atan2(tagPoses[0].second.at(0), distance);
+        followTheLeader(distance, angle);
+    } else sendMotorCommand(0, 0);
 
     // Show candidates and geometry
     cv::imshow("candidates", displayFrame);
@@ -336,3 +343,39 @@ void processFrame(const cv::Mat& frame) {
     // Show input frame
     cv::imshow("camera", frame);
 }
+
+void followTheLeader(double distance, double angle) {
+    
+    int LMS = 0;
+    int RMS = 0;
+    
+    double turn = 1 - abs(angle / 2.0);
+    int forward = 0;
+    
+    if (distance > 25) {
+        forward = (int) (distance * 7);
+        if (forward > 200) {
+            forward = 200;
+        }
+    }
+    
+    LMS = forward;
+    RMS = forward;
+    
+    if (angle > 0) {
+        RMS *= turn;
+    } else {
+        LMS *= turn;
+    }
+    
+    std::cout << "RMS = " << RMS << " | LMS =  " << LMS << std::endl;
+    sendMotorCommand(RMS, -1 * LMS);
+}
+    
+    
+    
+    
+    
+    
+    
+    
