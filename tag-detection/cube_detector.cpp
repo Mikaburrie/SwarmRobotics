@@ -8,7 +8,7 @@
 
 #include "../motor-control/motor_command.h"
 
-LogitechC270HD camera(2);
+LogitechC270HD camera(0);
 OctoTagConfiguration config(camera.parameters);
 
 void makeWindows() {
@@ -108,6 +108,34 @@ void makeWindows() {
     cv::setTrackbarPos("corner angle error limit", config.candidateWindow, config.cornerAngleErrorLimit*180/CV_PI);
 }
 
+void followTheLeader(double distance, double angle) {
+    
+    int LMS = 0;
+    int RMS = 0;
+    
+    double turn = 1 - abs(angle / 2.0);
+    int forward = 0;
+    
+    if (distance > 25) {
+        forward = (int) (distance * 7);
+        if (forward > 200) {
+            forward = 200;
+        }
+    }
+    
+    LMS = forward;
+    RMS = forward;
+    
+    if (angle > 0) {
+        RMS *= turn;
+    } else {
+        LMS *= turn;
+    }
+    
+    std::cout << "RMS = " << RMS << " | LMS =  " << LMS << std::endl;
+    sendMotorCommand(RMS, -1 * LMS);
+}
+
 int main(int argc, char** argv) {
     // Creates windows for displaying images
     makeWindows();
@@ -130,6 +158,13 @@ int main(int argc, char** argv) {
             double angle = atan2(tag.tvec.at(0), tag.tvec.at(2));
             std::cout << "color " << tag.color << " target at (" << tag.tvec.at(2) << " cm, " << angle << " rad)" <<  std::endl;
         }
+
+        // Drive motors if tag is detected
+        if (tags.size() > 0) {
+            double distance = tags[0].tvec.at(2);
+            double angle = atan2(tags[0].tvec.at(0), distance);
+            followTheLeader(distance, angle);
+        } else sendMotorCommand(0, 0);
 
         std::cout << std::endl;
 
