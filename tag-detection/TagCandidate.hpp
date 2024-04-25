@@ -7,7 +7,7 @@
 
 struct TagCandidate;
 struct CornerCandidate;
-void getTagCandidates(cv::Mat& displayFrame, const std::vector<ContourFeatures>&, const std::vector<ContourFeatures>&, std::vector<TagCandidate>&, std::vector<TagCandidate>&, double, double, double, double);
+void getTagCandidates(const std::vector<ContourFeatures>&, const std::vector<ContourFeatures>&, std::vector<TagCandidate>&, std::vector<TagCandidate>&, double, double, double, double);
 void getCornerCandidates(const ContourFeatures&, const std::vector<ContourFeatures>&, std::vector<CornerCandidate>&, double, double, double);
 std::pair<int, double> classifyAngleDirection(double, double);
 double wrapToPi(double angle);
@@ -68,7 +68,8 @@ struct CornerCandidate {
 };
 
 // Finds tags from contours
-void getTagCandidates(cv::Mat& displayFrame, const std::vector<ContourFeatures>& cf0, const std::vector<ContourFeatures>& cf1, std::vector<TagCandidate>& tags0, std::vector<TagCandidate>& tags1, double ellipseThreshold=0.85, double cornerAreaScaleLimit=2.5, double cornerDistanceErrorLimit=0.3, double cornerAngleErrorLimit=(CV_PI/9)) {
+void getTagCandidates(const std::vector<ContourFeatures>& cf0, const std::vector<ContourFeatures>& cf1, std::vector<TagCandidate>& tags0, std::vector<TagCandidate>& tags1, double ellipseThreshold=0.85, double cornerAreaScaleLimit=2.5, double cornerDistanceErrorLimit=0.3, double cornerAngleErrorLimit=(CV_PI/9)) {
+    // Find tags with center in cf0 and corners in cf1
     for (int i = 0; i < cf0.size(); i++) {
         // Discard if not ellipsoid enough
         const ContourFeatures& ellipse = cf0.at(i);
@@ -86,7 +87,7 @@ void getTagCandidates(cv::Mat& displayFrame, const std::vector<ContourFeatures>&
         tags0.push_back(std::move(tag));
     }
 
-    // Same thing but vectors are swapped
+    // Find tags with center in cf1 and corners in cf0
     for (int i = 0; i < cf1.size(); i++) {
         const ContourFeatures& ellipse = cf1.at(i);
         if (ellipse.ellipseness < ellipseThreshold) continue;
