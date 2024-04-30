@@ -7,8 +7,9 @@
 
 int main(int argc, char* argv[]) {
 	// Check for correct argument count
-	if (argc != 3) {
-		printf("Expected 2 integer arguments\n");
+	
+	if (argc != 3 && argc != 1) {
+		printf("Expected 2 integer arguments or none to stop\n");
 		return 1;
 	}
 	
@@ -20,7 +21,12 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 	
-	status = sendMotorCommand(atoi(argv[1]), atoi(argv[2]));
+	if(argc == 3) { 
+	    
+	    status = sendMotorCommand(atoi(argv[1]), atoi(argv[2]));
+	} else {
+		status = sendMotorCommand(0, 0);
+    }
 	if (status == -1) {
 		printf("Failed to send command. Make sure to run with sudo\n");
 		return 1;

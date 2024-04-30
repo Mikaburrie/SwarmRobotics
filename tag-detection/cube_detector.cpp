@@ -13,7 +13,7 @@
 // Measure in centimeters
 #define TAG_SIZE 12.7
 
-LogitechC270HD camera(1);
+LogitechC270HD camera(0);
 
 struct Configuration {
     int selectedColor = 0;
@@ -67,7 +67,7 @@ int main(int argc, char** argv) {
         cv::Mat frame;
         camera >> frame;
         
-        processFrame(frame);
+        if (!frame.empty()) processFrame(frame);
         
         key = cv::waitKey(16);
     }
