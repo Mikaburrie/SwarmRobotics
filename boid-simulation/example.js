@@ -12,6 +12,7 @@
 //          A list of boids in the detection area via the (hypothetical) vision system
 //          Format: [
 //              {
+//                  string rule  - The rule of the detected boid (used for wall purposes)
 //                  number dist  - Z distance of detected boid
 //                  number theta  - Angle of detected boid relative to boid
 //                  number heading - Angle of detected boid's direction (0 is facing towards, +-pi is facing away)
@@ -208,9 +209,6 @@ class ExampleDemo {
 
 // Register ExampleDemo under the name "Example"
 Swarm.registerDemo("Example", ExampleDemo)
-
-// Register ExampleDemo a second time under the name "Example2"
-Swarm.registerDemo("Example2", ExampleDemo)
 
 //
 //  Files need to be listed inside of the index.html to be loaded

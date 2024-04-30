@@ -5,6 +5,12 @@
 
 struct LogitechC270HD: public cv::VideoCapture {
 
+    float parameters[9] {
+        6.7361123292017487e+02, 0.,                     3.1950000000000000e+02,
+        0.,                     6.7361123292017487e+02, 2.3950000000000000e+02,
+        0.,                     0.,                     1.
+    };
+
     LogitechC270HD(int index, int apiPref=0) {
         // Open camera
         open(index, apiPref);

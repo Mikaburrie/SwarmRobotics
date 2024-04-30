@@ -83,7 +83,7 @@ class Boid {
     
     // Vision characteristics
     static #fov = 60*(Math.PI/180)
-    static #range = 30
+    static #range = 60
     
     // Dimensions of boid
     static #size = 5
@@ -223,6 +223,7 @@ class Boid {
             if (inView && dp.dot(dp) < range*range) {
                 dp.set(this.#dir.dot(dp), this.#dir.cross(dp))
                 detected.push({
+                    rule: boid.#rule.constructor.name,
                     dist: dp.x,
                     angle: dp.angle,
                     heading: -Math.wrapToPi(boid.#theta - this.#theta + Math.PI)
@@ -474,4 +475,4 @@ class Swarm {
 }
 
 // Start a Swarm instance using "Example" setup when the window loads
-window.onload = () => new Swarm(1280, 720, "Example").run()
+window.onload = () => new Swarm(1280, 720, "Follow the Leader").run()
