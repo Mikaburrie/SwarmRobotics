@@ -52,7 +52,15 @@ long long timeInMilliseconds(void) {
 
 float updateAlpha(float oldAlpha, float tempAlpha, long tBeforeFrame, long tSinceLastFrame, long totalTime) {
     printf("tb4: %d, tslf: %d, tto: %d \n", tBeforeFrame, tSinceLastFrame, totalTime);
-    return oldAlpha;
+    float oldRatio =  tBeforeFrame * oldAlpha;
+    float newRatio = tSinceLastFrame * tempAlpha;
+    float newAlpha = (newRatio + oldRatio) / totalTime;
+    
+    printf("OldAlpha: %f\n", oldAlpha);
+    printf("OldAlpha: %f\n", tempAlpha);
+    
+    printf("NewAlpha: %f\n", newAlpha);
+    return newAlpha;
 }
 
 // Handles interrupt signal (ctrl+C)
@@ -91,7 +99,7 @@ int main(int argc, char *argv[]) {
     
     // Loop until program is terminated
     while (running) {
-        // Get external input from pipe
+        // Get external input from pipe (non-blocking)
         int bytesReceived = read(fileDescriptor, dataBuffer, IPC_BUFFER_SIZE);
         
         // Set left and right motor speeds if command is received
@@ -104,11 +112,10 @@ int main(int argc, char *argv[]) {
                  int currLeftCount = leftMotor.distance - lastLeftCount;
                  float tempRatioSpd = (1.0 * lastRightSpd - 150) / (1.0 * lastLeftSpd - 150);
                  float tempRatioDist = (1.0 * currRightCount)  / (1.0 * currLeftCount);
-                 float tempAlpha = tempRatioSpd / tempRatioDist;
+                 float tempAlpha = tempRatioDist /  tempRatioSpd;
                  alpha = updateAlpha(alpha, tempAlpha, (lastFrame - firstFrame), (thisFrame - lastFrame), (thisFrame - firstFrame));
                  
-                 printf("Last Speeds: %d, %d Left count:%d Right count:%d\n", lastRightSpd, lastLeftSpd, currRightCount, currLeftCount);
-                 printf("Speed Ratio: %f Dist Ratio: %f \n", tempRatioSpd, tempRatioDist);
+                 
                  
             } else {
                  firstFrame = timeInMilliseconds();
@@ -117,7 +124,7 @@ int main(int argc, char *argv[]) {
             
            
             motorSetDuty(&leftMotor, dataBuffer[0]);
-            motorSetDuty(&rightMotor, dataBuffer[1]);
+            motorSetDuty(&rightMotor, dataBuffer[1] * alpha);
             lastFrame = thisFrame;
             
             
