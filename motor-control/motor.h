@@ -1,4 +1,33 @@
 #include <pigpio.h>
+#include <sys/time.h>
+#include <stdlib.h>
+#include <math.h>
+
+// Distances in micrometers
+#define WHEELBASE 150000
+#define WHEEL_DIAMETER 62000
+#define TICKS_PER_ROTATION 20
+#define PI 3.14159
+#define WHEEL_CIRCUMFERENCE PI*WHEEL_DIAMETER
+#define DISTANCE_PER_TICK (WHEEL_CIRCUMFERENCE/TICKS_PER_ROTATION)
+
+// Time in microseconds
+#define MINIMUM_ENCODER_INTERVAL 5000UL
+#define MAXIMUM_ENCODER_INTERVAL 200000UL
+
+#define ENCODER_P 2
+#define VELOCITY_BALANCE 0.5
+
+long long micros() {
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    return 1000000*(long long)tv.tv_sec + tv.tv_usec;
+}
+
+void delay(int ms) {
+    long long start = micros();
+    while (micros() - start < ms*1000) {}
+}
 
 // Struct containing motor settings and values
 struct Motor {
@@ -6,12 +35,31 @@ struct Motor {
     const int gpioPWM; // not to be confused with pigpio's gpioPWM() function
     const int gpioDir;
     const int gpioEncoder;
-    int distance;
+    
+    int encoderTick;
+    uint32_t encoderTime;
+
+    float velocityTarget;
+    float velocityOutput;
+    volatile float velocityMeasured;
+    float speedMax;
+
+    uint8_t powerMin;
+    uint8_t powerStart;
 };
 
 // Handles encoder interrupt
-void motorOnEncoderTick(struct Motor* m, int level, uint32_t time) {
-    m->distance++;
+void motorOnEncoderTick(struct Motor* m, int level, uint32_t now) {
+    uint32_t delta = now - m->encoderTime;
+    
+    // Ignore tick if too fast
+    if (delta < MINIMUM_ENCODER_INTERVAL) return;
+
+    // Handle tick
+    int8_t direction = (m->velocityOutput < 0 ? -1 : 1);
+    m->velocityMeasured = DISTANCE_PER_TICK/delta*direction;
+    m->encoderTick += direction;
+    m->encoderTime = now;
 }
 
 void motorInitialize(struct Motor* m, gpioISRFunc_t onEncoderTick) {
@@ -43,10 +91,19 @@ void motorInitialize(struct Motor* m, gpioISRFunc_t onEncoderTick) {
     // Setup encoder interrupt
     gpioSetMode(m->gpioEncoder, PI_INPUT);
     gpioSetPullUpDown(m->gpioEncoder, PI_PUD_DOWN);
-    gpioSetISRFunc(m->gpioEncoder, EITHER_EDGE, 0, onEncoderTick);
+    gpioSetISRFunc(m->gpioEncoder, FALLING_EDGE, 0, onEncoderTick);
     
     // Set default values
-    m->distance = 0;
+    m->encoderTick = 0;
+    m->encoderTime = 0;
+
+    m->velocityTarget = 0;
+    m->velocityOutput = 0;
+    m->velocityMeasured = 0;
+    m->speedMax = 0;
+
+    m->powerMin = 0;
+    m->powerStart = 0;
 }
 
 void motorSetDuty(struct Motor* m, int duty) {
@@ -61,4 +118,81 @@ void motorTerminate(struct Motor* m) {
     gpioPWM(m->gpioPWM, 0);
     gpioWrite(m->gpioPWM, 0);
     gpioSetISRFunc(m->gpioEncoder, EITHER_EDGE, 0, NULL);
+}
+
+// Calculates powerStart, powerMin, and speedMax for a motor
+void motorCalibrate(struct Motor* m) {
+    // Reset measured velocity
+    m->velocityMeasured = 0;
+
+    // Increase power until motor moves and store result
+    for (uint8_t power = 0; power < 255; power++) {
+        if (m->velocityMeasured != 0) {
+            m->powerStart = fmin(power + 10, 255);
+            break;
+        }
+        motorSetDuty(m, power);
+        delay(16);
+    }
+
+    // Drive at full power and measure speed
+    motorSetDuty(m, 200);
+    delay(1000);
+
+    float speed = 0;
+    for (uint8_t i = 0; i < 64; i++) {
+        speed += m->velocityMeasured;
+        delay(16);
+    }
+
+    m->speedMax = speed/64;
+
+    // Decrease power until motor stops and store result
+    for (uint8_t power = m->powerStart; power > 0; power--) {
+        if ((micros() - m->encoderTime) > MAXIMUM_ENCODER_INTERVAL) {
+            m->powerMin = power + 10;
+            break;
+        }
+        motorSetDuty(m, --power);
+        delay(50);
+    }
+
+    m->velocityTarget = 0;
+}
+
+// Determines motor speed and adjusts output to match target
+void motorUpdate(struct Motor* m, float delta) {
+    // Assume motor stopped if no encoder tick occurs in a certain interval
+    if ((micros() - m->encoderTime) > MAXIMUM_ENCODER_INTERVAL) m->velocityMeasured = 0;
+
+    // Update PID loop (really just P)
+    float error = m->velocityTarget - m->velocityMeasured;
+    if (m->velocityTarget == 0) m->velocityOutput = 0;
+    else m->velocityOutput += ENCODER_P*error*delta;
+
+    // Limit speed range
+    m->velocityOutput = fmax(-m->speedMax, fmin(m->velocityOutput, m->speedMax));
+
+    // Calculate power output
+    uint16_t power = (uint16_t) 255*abs(m->velocityOutput)/m->speedMax; // Speed -> power
+    if (m->powerMin < power && power < m->powerStart && abs(m->velocityMeasured) < 0.01) power = m->powerStart; // Start push
+    power = fmin(power, 255)*(power > m->powerMin); // Range
+
+    // Set motor power
+    motorSetDuty(m, power);
+}
+
+// Sets the motor speed
+void motorSetVelocity(struct Motor* m, float velocity) {
+    float speed = abs(velocity);
+
+    // Zero power if below minimum
+    if (speed < (m->speedMax*m->powerMin/255)) {
+        m->velocityTarget = 0;
+        return;
+    }
+
+    // Limit to max speed and set
+    if (speed > m->speedMax) velocity = m->speedMax*(velocity < 0 ? -1 : 1);
+    m->velocityTarget = velocity;
 }

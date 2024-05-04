@@ -2,9 +2,7 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <unistd.h>
-#include <math.h>
 
 #define IPC_BUFFER_SIZE 20
 
@@ -13,11 +11,11 @@
 // Define GPIO pins for motor output and encoder input
 #define GPIO_MOTOR_LEFT_PWM 19
 #define GPIO_MOTOR_LEFT_DIR 20
-#define GPIO_ENCODER_LEFT 23
+#define GPIO_ENCODER_LEFT 24
 
 #define GPIO_MOTOR_RIGHT_PWM 18
 #define GPIO_MOTOR_RIGHT_DIR 17
-#define GPIO_ENCODER_RIGHT 24
+#define GPIO_ENCODER_RIGHT 23
 
 // Define motors
 struct Motor leftMotor = {
@@ -43,26 +41,6 @@ void onRightEncoderTick(int gpio, int level, uint32_t time) {
     motorOnEncoderTick(&rightMotor, level, time);
 }
 
-long long timeInMilliseconds(void) {
-    struct timeval tv;
-
-    gettimeofday(&tv,NULL);
-    return (((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
-}
-
-float updateAlpha(float oldAlpha, float tempAlpha, long tBeforeFrame, long tSinceLastFrame, long totalTime) {
-    printf("tb4: %d, tslf: %d, tto: %d \n", tBeforeFrame, tSinceLastFrame, totalTime);
-    float oldRatio =  tBeforeFrame * oldAlpha;
-    float newRatio = tSinceLastFrame * tempAlpha;
-    float newAlpha = (newRatio + oldRatio) / totalTime;
-    
-    printf("OldAlpha: %f\n", oldAlpha);
-    printf("OldAlpha: %f\n", tempAlpha);
-    
-    printf("NewAlpha: %f\n", newAlpha);
-    return newAlpha;
-}
-
 // Handles interrupt signal (ctrl+C)
 static volatile int running = 1;
 void systemInterruptHandler(int dummy) {
@@ -77,25 +55,21 @@ int main(int argc, char *argv[]) {
     motorInitialize(&leftMotor, onLeftEncoderTick);
     motorInitialize(&rightMotor, onRightEncoderTick);
     
+    // Calibraqte
+    motorCalibrate(&leftMotor);
+    printf("Min power: %d, Start power: %d, Max speed: %f\n", leftMotor.powerMin, leftMotor.powerStart, leftMotor.speedMax);
+    
     // Create and open non-blocking FIFO pipe for receiving motor commands
     int fileDescriptor;
     char* fifoPath = "/tmp/motor_control";
     int dataBuffer[IPC_BUFFER_SIZE];
     mkfifo(fifoPath, 0666);
     fileDescriptor = open(fifoPath, O_RDONLY | O_NONBLOCK);
-    
-    float ratio = 1.0; // R/L
-    int lastLeftSpd = 0xFF;
-    int lastRightSpd = 0xFF;
-    int lastLeftCount = 0;
-    int lastRightCount = 0;
-    
     printf("File: %d\n", fileDescriptor);
-    unsigned long lastFrame = timeInMilliseconds();
-    unsigned long thisFrame = timeInMilliseconds();
-    unsigned long firstFrame = lastFrame;
     
-    float alpha = 1.0;
+    // Define timing variables
+    float now = micros();
+    float lastUpdate = now;
     
     // Loop until program is terminated
     while (running) {
@@ -104,43 +78,16 @@ int main(int argc, char *argv[]) {
         
         // Set left and right motor speeds if command is received
         if (bytesReceived > 0) {
-            thisFrame = timeInMilliseconds();
-            printf("Received: %d, %d Left count:%d Right count:%d\n", dataBuffer[0], dataBuffer[1], leftMotor.distance, rightMotor.distance);
-           
-            if(lastLeftSpd != 0xFFF && lastRightSpd != 0xFFF) {
-                 int currRightCount = rightMotor.distance - lastRightCount;
-                 int currLeftCount = leftMotor.distance - lastLeftCount;
-                 float tempRatioSpd = (1.0 * lastRightSpd - 150) / (1.0 * lastLeftSpd - 150);
-                 float tempRatioDist = (1.0 * currRightCount)  / (1.0 * currLeftCount);
-                 float tempAlpha = tempRatioDist /  tempRatioSpd;
-                 alpha = updateAlpha(alpha, tempAlpha, (lastFrame - firstFrame), (thisFrame - lastFrame), (thisFrame - firstFrame));
-                 
-                 
-                 
-            } else {
-                 firstFrame = timeInMilliseconds();
-                 
-            }
-            
-           
-            motorSetDuty(&leftMotor, dataBuffer[0]);
-            motorSetDuty(&rightMotor, dataBuffer[1] * alpha);
-            lastFrame = thisFrame;
-            
-            
-            lastLeftSpd = abs(dataBuffer[0]);
-            lastRightSpd = abs(dataBuffer[1]);
-            lastLeftCount = leftMotor.distance;
-            lastRightCount = rightMotor.distance;
-            
-            
-            
-	    
+            motorSetVelocity(&leftMotor, dataBuffer[0]);
+        //    motorSetDuty(&rightMotor, dataBuffer[1]);
         }
         
-        //printf("%d\n", leftMotor.distance);
-        //printf("%d\n", rightMotor.distance);
+        now = micros();
+        float delta = (now - lastUpdate)/1000000.0;
         
+        motorUpdate(&leftMotor, delta);
+        
+        lastUpdate = now;
     }
     
     // Close and remove FIFO pipe
