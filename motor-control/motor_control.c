@@ -13,11 +13,18 @@
 // Define GPIO pins for motor output and encoder input
 #define GPIO_MOTOR_LEFT_PWM 19
 #define GPIO_MOTOR_LEFT_DIR 20
-#define GPIO_ENCODER_LEFT 23
+#define GPIO_ENCODER_LEFT 24
 
 #define GPIO_MOTOR_RIGHT_PWM 18
 #define GPIO_MOTOR_RIGHT_DIR 17
-#define GPIO_ENCODER_RIGHT 24
+#define GPIO_ENCODER_RIGHT 23
+
+#define WHEEL_DIAM .065
+
+#define COUNT_ONE_TURN  20
+#define UPDATE_TIME 100
+
+const float DIST_ONE_TURN = WHEEL_DIAM * 3.14;
 
 // Define motors
 struct Motor leftMotor = {
@@ -50,19 +57,6 @@ long long timeInMilliseconds(void) {
     return (((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
 }
 
-float updateAlpha(float oldAlpha, float tempAlpha, long tBeforeFrame, long tSinceLastFrame, long totalTime) {
-    printf("tb4: %d, tslf: %d, tto: %d \n", tBeforeFrame, tSinceLastFrame, totalTime);
-    float oldRatio =  tBeforeFrame * oldAlpha;
-    float newRatio = tSinceLastFrame * tempAlpha;
-    float newAlpha = (newRatio + oldRatio) / totalTime;
-    
-    printf("OldAlpha: %f\n", oldAlpha);
-    printf("OldAlpha: %f\n", tempAlpha);
-    
-    printf("NewAlpha: %f\n", newAlpha);
-    return newAlpha;
-}
-
 // Handles interrupt signal (ctrl+C)
 static volatile int running = 1;
 void systemInterruptHandler(int dummy) {
@@ -84,16 +78,15 @@ int main(int argc, char *argv[]) {
     mkfifo(fifoPath, 0666);
     fileDescriptor = open(fifoPath, O_RDONLY | O_NONBLOCK);
     
-    float ratio = 1.0; // R/L
+  
     int lastLeftSpd = 0xFF;
     int lastRightSpd = 0xFF;
     int lastLeftCount = 0;
     int lastRightCount = 0;
     
     printf("File: %d\n", fileDescriptor);
-    unsigned long lastFrame = timeInMilliseconds();
-    unsigned long thisFrame = timeInMilliseconds();
-    unsigned long firstFrame = lastFrame;
+    unsigned long lastUpdate = timeInMilliseconds();
+    unsigned long currTime = lastUpdate;
     
     float alpha = 1.0;
     
@@ -104,39 +97,35 @@ int main(int argc, char *argv[]) {
         
         // Set left and right motor speeds if command is received
         if (bytesReceived > 0) {
-            thisFrame = timeInMilliseconds();
+          
             printf("Received: %d, %d Left count:%d Right count:%d\n", dataBuffer[0], dataBuffer[1], leftMotor.distance, rightMotor.distance);
-           
-            if(lastLeftSpd != 0xFFF && lastRightSpd != 0xFFF) {
-                 int currRightCount = rightMotor.distance - lastRightCount;
-                 int currLeftCount = leftMotor.distance - lastLeftCount;
-                 float tempRatioSpd = (1.0 * lastRightSpd - 150) / (1.0 * lastLeftSpd - 150);
-                 float tempRatioDist = (1.0 * currRightCount)  / (1.0 * currLeftCount);
-                 float tempAlpha = tempRatioDist /  tempRatioSpd;
-                 alpha = updateAlpha(alpha, tempAlpha, (lastFrame - firstFrame), (thisFrame - lastFrame), (thisFrame - firstFrame));
-                 
-                 
-                 
-            } else {
-                 firstFrame = timeInMilliseconds();
-                 
-            }
             
-           
+            
+            
+            
             motorSetDuty(&leftMotor, dataBuffer[0]);
-            motorSetDuty(&rightMotor, dataBuffer[1] * alpha);
-            lastFrame = thisFrame;
+            motorSetDuty(&rightMotor, dataBuffer[1]);
             
             
-            lastLeftSpd = abs(dataBuffer[0]);
-            lastRightSpd = abs(dataBuffer[1]);
-            lastLeftCount = leftMotor.distance;
-            lastRightCount = rightMotor.distance;
+          
             
             
             
 	    
         }
+        
+        currTime = timeInMilliseconds();
+        if(currTime > lastUpdate + UPDATE_TIME) {
+                 unsigned long timeBT = currTime - lastUpdate;
+                 float lastRightSpeed = (((rightMotor.distance - lastRightCount) / COUNT_ONE_TURN) * DIST_ONE_TURN) / timeBT;
+                 float lastLeftSpeed = (((leftMotor.distance - lastLeftCount) / COUNT_ONE_TURN) * DIST_ONE_TURN) / timeBT;
+                 lastLeftCount = leftMotor.distance;
+                 lastRightCount = rightMotor.distance;
+                 lastUpdate = timeInMilliseconds();
+                 
+                 printf("left speed: %f right speed % f\n", lastLeftSpeed, lastRightSpeed);
+                 
+        } 
         
         //printf("%d\n", leftMotor.distance);
         //printf("%d\n", rightMotor.distance);
