@@ -7,7 +7,6 @@
 #include "OctoTagDetector.hpp"
 
 #include "../motor-control/motor_command.h"
-#include "../boids-algorithm/boids.h"
 
 LogitechC270HD camera(0);
 OctoTagConfiguration config(camera.parameters);
