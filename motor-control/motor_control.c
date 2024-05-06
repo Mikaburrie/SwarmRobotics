@@ -2,13 +2,12 @@
 #include <signal.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include <sys/time.h>
 #include <unistd.h>
-#include <math.h>
 
 #define IPC_BUFFER_SIZE 20
 
 #include "motor.h"
+#define VELOCITY_BALANCE 0.5
 
 // Define GPIO pins for motor output and encoder input
 #define GPIO_MOTOR_LEFT_PWM 19
@@ -19,42 +18,31 @@
 #define GPIO_MOTOR_RIGHT_DIR 17
 #define GPIO_ENCODER_RIGHT 23
 
-#define WHEEL_DIAM .065
-
-#define COUNT_ONE_TURN  20
-#define UPDATE_TIME 100
-
-const float DIST_ONE_TURN = WHEEL_DIAM * 3.14;
-
 // Define motors
 struct Motor leftMotor = {
     GPIO_MOTOR_LEFT_PWM,
     GPIO_MOTOR_LEFT_DIR,
-    GPIO_ENCODER_LEFT
+    GPIO_ENCODER_LEFT,
+    0
 };
 
 struct Motor rightMotor = {
     GPIO_MOTOR_RIGHT_PWM,
     GPIO_MOTOR_RIGHT_DIR,
-    GPIO_ENCODER_RIGHT
+    GPIO_ENCODER_RIGHT,
+    1 // reversed
 };
 
 // Define encoder tick handlers
 void onLeftEncoderTick(int gpio, int level, uint32_t time) {
 //    printf("Left encoder tick: level %d at %d us\n", level, time);
+    if (level) return;
     motorOnEncoderTick(&leftMotor, level, time);
 }
 
 void onRightEncoderTick(int gpio, int level, uint32_t time) {
 //    printf("Right encoder tick: level %d at %d us\n", level, time);
     motorOnEncoderTick(&rightMotor, level, time);
-}
-
-long long timeInMilliseconds(void) {
-    struct timeval tv;
-
-    gettimeofday(&tv,NULL);
-    return (((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
 }
 
 // Handles interrupt signal (ctrl+C)
@@ -71,24 +59,28 @@ int main(int argc, char *argv[]) {
     motorInitialize(&leftMotor, onLeftEncoderTick);
     motorInitialize(&rightMotor, onRightEncoderTick);
     
+    // Calibrate
+    motorCalibrate(&leftMotor);
+    motorCalibrate(&rightMotor);
+    printf("Calibration result:\nMin power: %d, Start power: %d, Max speed: %f\n", leftMotor.powerMin, leftMotor.powerStart, leftMotor.speedMax);
+    printf("Calibration result:\nMin power: %d, Start power: %d, Max speed: %f\n", rightMotor.powerMin, rightMotor.powerStart, rightMotor.speedMax);
+    
+    // Set left and right speedMax to minimum
+    float speedMax = fmin(leftMotor.speedMax, rightMotor.speedMax);
+    leftMotor.speedMax = speedMax;
+    rightMotor.speedMax = speedMax;
+    
     // Create and open non-blocking FIFO pipe for receiving motor commands
     int fileDescriptor;
     char* fifoPath = "/tmp/motor_control";
     int dataBuffer[IPC_BUFFER_SIZE];
     mkfifo(fifoPath, 0666);
     fileDescriptor = open(fifoPath, O_RDONLY | O_NONBLOCK);
-    
-  
-    int lastLeftSpd = 0xFF;
-    int lastRightSpd = 0xFF;
-    int lastLeftCount = 0;
-    int lastRightCount = 0;
-    
     printf("File: %d\n", fileDescriptor);
-    unsigned long lastUpdate = timeInMilliseconds();
-    unsigned long currTime = lastUpdate;
     
-    float alpha = 1.0;
+    // Define timing variables
+    float now = gpioTick();
+    float lastUpdate = now;
     
     // Loop until program is terminated
     while (running) {
@@ -97,39 +89,29 @@ int main(int argc, char *argv[]) {
         
         // Set left and right motor speeds if command is received
         if (bytesReceived > 0) {
-          
-            printf("Received: %d, %d Left count:%d Right count:%d\n", dataBuffer[0], dataBuffer[1], leftMotor.distance, rightMotor.distance);
-            
-            
-            
-            
-            motorSetDuty(&leftMotor, dataBuffer[0]);
-            motorSetDuty(&rightMotor, dataBuffer[1]);
-            
-            
-          
-            
-            
-            
-	    
+            motorSetVelocity(&leftMotor, leftMotor.speedMax*dataBuffer[0]/100);
+            motorSetVelocity(&rightMotor, -rightMotor.speedMax*dataBuffer[1]/100);
         }
         
-        currTime = timeInMilliseconds();
-        if(currTime > lastUpdate + UPDATE_TIME) {
-                 unsigned long timeBT = currTime - lastUpdate;
-                 float lastRightSpeed = (((rightMotor.distance - lastRightCount) / COUNT_ONE_TURN) * DIST_ONE_TURN) / timeBT;
-                 float lastLeftSpeed = (((leftMotor.distance - lastLeftCount) / COUNT_ONE_TURN) * DIST_ONE_TURN) / timeBT;
-                 lastLeftCount = leftMotor.distance;
-                 lastRightCount = rightMotor.distance;
-                 lastUpdate = timeInMilliseconds();
-                 
-                 printf("left speed: %f right speed % f\n", lastLeftSpeed, lastRightSpeed);
-                 
-        } 
+        // Calculate delta time
+        now = gpioTick();
+        float delta = (now - lastUpdate)/1000000.0;
         
-        //printf("%d\n", leftMotor.distance);
-        //printf("%d\n", rightMotor.distance);
+        // Adjust speeds to maintain proper ratio
+        if (leftMotor.velocityTarget != 0 && rightMotor.velocityTarget != 0) {
+            float ratio = leftMotor.velocityTarget/rightMotor.velocityTarget;
+            float leftSpeedError = rightMotor.velocityMeasured*ratio - leftMotor.velocityMeasured;
+            float rightSpeedError = leftMotor.velocityMeasured/ratio - rightMotor.velocityMeasured;
+            leftMotor.velocityOutput += leftSpeedError*VELOCITY_BALANCE*delta;
+            rightMotor.velocityOutput -= rightSpeedError*VELOCITY_BALANCE*delta;
+        }
         
+        // Update motors
+        motorUpdate(&leftMotor, delta);
+        motorUpdate(&rightMotor, delta);
+        
+        lastUpdate = now;
+        usleep(10000);
     }
     
     // Close and remove FIFO pipe

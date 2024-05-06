@@ -7,6 +7,7 @@
 #include "OctoTagDetector.hpp"
 
 #include "../motor-control/motor_command.h"
+#include "../boids-algorithm/boids.h"
 
 LogitechC270HD camera(0);
 OctoTagConfiguration config(camera.parameters);
@@ -136,6 +137,52 @@ void followTheLeader(double distance, double angle) {
     sendMotorCommand(RMS, -1 * LMS);
 }
 
+void drive(std::vector<OctoTag> tags, int RMS, int LMS) {
+	if (tags.size() == 0) {
+		RMS = 25 + RMS;
+		LMS = 15 + LMS;
+		
+		//sendMotorCommand(80, -80);
+		//sleep(1);
+		sendMotorCommand(RMS+60, LMS+60);
+	}
+}
+
+// Slow down this robot based on the number of rob
+int seperation(std::vector<OctoTag> tags, int sep) {
+    int close = 0;
+    int minDist = 30; //cm
+    for (OctoTag tag: tags) {
+        int tagDist = tag.tvec.at(2);
+        if (tagDist < minDist) {
+            close += minDist - tagDist;
+        }
+    }
+    close = (close / (minDist*3)) * sep;
+    return close;
+}
+
+void cohesion(std::vector<OctoTag> tags) {
+
+}
+
+void avoidWalls(std::vector<OctoTag> tags) {
+
+}
+
+void turnTowards() {
+
+}
+
+void turnAway() {
+
+}
+
+void boids() {
+    
+}
+	
+
 int main(int argc, char** argv) {
     // Creates windows for displaying images
     makeWindows();
@@ -165,13 +212,18 @@ int main(int argc, char** argv) {
             double angle = atan2(tag.tvec.at(0), tag.tvec.at(2));
             std::cout << "color " << tag.color << " target at (" << tag.tvec.at(2) << " cm, " << angle << " rad)" <<  std::endl;
         }
-
+        
+        if (tags.size() == 0) {
+            //drive(0,0);
+        } else {
+        
+        }
         // Drive motors if tag is detected
-        if (tags.size() > 0) {
-            double distance = tags[0].tvec.at(2);
-            double angle = atan2(tags[0].tvec.at(0), distance);
-            followTheLeader(distance, angle);
-        } else sendMotorCommand(0, 0);
+        //if (tags.size() > 0) {
+        //    double distance = tags[0].tvec.at(2);
+        //   double angle = atan2(tags[0].tvec.at(0), distance);
+        //    followTheLeader(distance, angle);
+        //} else sendMotorCommand(0, 0);
 
         std::cout << std::endl;
 
