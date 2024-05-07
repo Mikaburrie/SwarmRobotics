@@ -7,41 +7,38 @@
 #define IPC_BUFFER_SIZE 20
 
 #include "motor.h"
-#define VELOCITY_BALANCE 0.5
+#define VELOCITY_BALANCE 1
 
 // Define GPIO pins for motor output and encoder input
 #define GPIO_MOTOR_LEFT_PWM 19
 #define GPIO_MOTOR_LEFT_DIR 20
-#define GPIO_ENCODER_LEFT 24
+#define GPIO_ENCODER_LEFT 23
 
 #define GPIO_MOTOR_RIGHT_PWM 18
 #define GPIO_MOTOR_RIGHT_DIR 17
-#define GPIO_ENCODER_RIGHT 23
+#define GPIO_ENCODER_RIGHT 24
 
 // Define motors
 struct Motor leftMotor = {
     GPIO_MOTOR_LEFT_PWM,
     GPIO_MOTOR_LEFT_DIR,
-    GPIO_ENCODER_LEFT,
-    0
+    GPIO_ENCODER_LEFT
 };
 
 struct Motor rightMotor = {
     GPIO_MOTOR_RIGHT_PWM,
     GPIO_MOTOR_RIGHT_DIR,
-    GPIO_ENCODER_RIGHT,
-    1 // reversed
+    GPIO_ENCODER_RIGHT
 };
 
 // Define encoder tick handlers
 void onLeftEncoderTick(int gpio, int level, uint32_t time) {
-//    printf("Left encoder tick: level %d at %d us\n", level, time);
-    if (level) return;
+    //printf("Left encoder tick: level %d at %d us\n", level, time);
     motorOnEncoderTick(&leftMotor, level, time);
 }
 
 void onRightEncoderTick(int gpio, int level, uint32_t time) {
-//    printf("Right encoder tick: level %d at %d us\n", level, time);
+    //printf("Right encoder tick: level %d at %d us\n", level, time);
     motorOnEncoderTick(&rightMotor, level, time);
 }
 
@@ -61,8 +58,8 @@ int main(int argc, char *argv[]) {
     
     // Calibrate
     motorCalibrate(&leftMotor);
-    motorCalibrate(&rightMotor);
     printf("Calibration result:\nMin power: %d, Start power: %d, Max speed: %f\n", leftMotor.powerMin, leftMotor.powerStart, leftMotor.speedMax);
+    motorCalibrate(&rightMotor);
     printf("Calibration result:\nMin power: %d, Start power: %d, Max speed: %f\n", rightMotor.powerMin, rightMotor.powerStart, rightMotor.speedMax);
     
     // Set left and right speedMax to minimum
@@ -90,7 +87,7 @@ int main(int argc, char *argv[]) {
         // Set left and right motor speeds if command is received
         if (bytesReceived > 0) {
             motorSetVelocity(&leftMotor, leftMotor.speedMax*dataBuffer[0]/100);
-            motorSetVelocity(&rightMotor, -rightMotor.speedMax*dataBuffer[1]/100);
+            motorSetVelocity(&rightMotor, rightMotor.speedMax*dataBuffer[1]/100);
         }
         
         // Calculate delta time
@@ -103,7 +100,7 @@ int main(int argc, char *argv[]) {
             float leftSpeedError = rightMotor.velocityMeasured*ratio - leftMotor.velocityMeasured;
             float rightSpeedError = leftMotor.velocityMeasured/ratio - rightMotor.velocityMeasured;
             leftMotor.velocityOutput += leftSpeedError*VELOCITY_BALANCE*delta;
-            rightMotor.velocityOutput -= rightSpeedError*VELOCITY_BALANCE*delta;
+            rightMotor.velocityOutput += rightSpeedError*VELOCITY_BALANCE*delta;
         }
         
         // Update motors

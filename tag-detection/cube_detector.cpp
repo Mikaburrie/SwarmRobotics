@@ -136,15 +136,13 @@ void followTheLeader(double distance, double angle) {
     sendMotorCommand(RMS, -1 * LMS);
 }
 
-void drive(std::vector<OctoTag> tags, int RMS, int LMS) {
-	if (tags.size() == 0) {
-		RMS = 25 + RMS;
-		LMS = 15 + LMS;
-		
-		//sendMotorCommand(80, -80);
-		//sleep(1);
-		sendMotorCommand(RMS+60, LMS+60);
-	}
+void drive(int RMS, int LMS) {
+    RMS = 25 + RMS;
+    LMS = 15 + LMS;
+    
+    //sendMotorCommand(80, -80);
+    //sleep(1);
+    sendMotorCommand(LMS+60, RMS+60);
 }
 
 // Slow down this robot based on the number of rob
@@ -162,19 +160,33 @@ int seperation(std::vector<OctoTag> tags, int sep) {
 }
 
 void cohesion(std::vector<OctoTag> tags) {
+    double angle = 0;
+    for (OctoTag tag: tags) {
+        double tagAngle = atan2(tag.tvec.at(0), tag.tvec.at(2));
+        angle += tagAngle;
+    }
+    turnTowards(angle);
+}
+
+void avoidWalls(std::vector<OctoTag> wallTags) {
+    double angle = 0;
+    int minDist = 30;
+    for (OctoTag tag: wallTags) {
+        int tagDist = tag.tvec.at(2);
+        if (tagDist < minDist) {
+            double tagAngle = atan2(tag.tvec.at(0), tag.tvec.at(2));
+            angle += tagAngle;
+    }
+    turnAway(angle);
+}
+
+void turnTowards(double angle) {
 
 }
 
-void avoidWalls(std::vector<OctoTag> tags) {
-
-}
-
-void turnTowards() {
-
-}
-
-void turnAway() {
-
+void turnAway(double angle) {
+    if (angle < 0) {
+        sendMotorCommand(LMS+60, RMS+60);
 }
 
 void boids() {
@@ -213,7 +225,7 @@ int main(int argc, char** argv) {
         }
         
         if (tags.size() == 0) {
-            //drive(0,0);
+            drive(0,0);
         } else {
         
         }

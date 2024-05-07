@@ -17,7 +17,6 @@ struct Motor {
     const int gpioPWM; // not to be confused with pigpio's gpioPWM() function
     const int gpioDir;
     const int gpioEncoder;
-    const int reversed;
     
     volatile int encoderTick;
     volatile uint32_t encoderTime;
@@ -35,8 +34,8 @@ struct Motor {
 void motorOnEncoderTick(struct Motor* m, int level, uint32_t now) {
     uint32_t delta = now - m->encoderTime;
     
-    // Ignore tick if too fast
-    if (delta < MINIMUM_ENCODER_INTERVAL) return;
+    // Ignore tick if too fast or wrong level
+    if (level || delta < MINIMUM_ENCODER_INTERVAL) return;
 
     // Handle tick
     int8_t direction = (m->velocityOutput < 0 ? -1 : 1);
@@ -74,7 +73,7 @@ void motorInitialize(struct Motor* m, gpioISRFunc_t onEncoderTick) {
     // Setup encoder interrupt
     gpioSetMode(m->gpioEncoder, PI_INPUT);
     gpioSetPullUpDown(m->gpioEncoder, PI_PUD_DOWN);
-    gpioSetISRFunc(m->gpioEncoder, FALLING_EDGE, 0, onEncoderTick);
+    gpioSetAlertFunc(m->gpioEncoder, onEncoderTick);
     
     // Set default values
     m->encoderTick = 0;
@@ -98,7 +97,7 @@ void motorTerminate(struct Motor* m) {
     // Clear motor output and encoder interrupt
     gpioPWM(m->gpioPWM, 0);
     gpioWrite(m->gpioPWM, 0);
-    gpioSetISRFunc(m->gpioEncoder, FALLING_EDGE, 0, NULL);
+    gpioSetAlertFunc(m->gpioEncoder, NULL);
 }
 
 // Calculates powerStart, powerMin, and speedMax for a motor
@@ -160,7 +159,7 @@ void motorUpdate(struct Motor* m, float delta) {
     if (m->powerMin < abs(power) && abs(power) < m->powerStart && m->velocityMeasured == 0) power = m->powerStart*(power < 0 ? -1 : 1); // Start push
 
     // Set motor power
-    printf("%f %d\n",  m->velocityOutput, power);
+    //printf("%f %d\n",  m->velocityOutput, power);
     motorSetDuty(m, power);
 }
 
