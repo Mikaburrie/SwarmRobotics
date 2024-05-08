@@ -136,61 +136,118 @@ void followTheLeader(double distance, double angle) {
     sendMotorCommand(RMS, -1 * LMS);
 }
 
-void drive(int RMS, int LMS) {
-    RMS = 25 + RMS;
-    LMS = 15 + LMS;
+void drive() {
     
     //sendMotorCommand(80, -80);
     //sleep(1);
-    sendMotorCommand(LMS+60, RMS+60);
+    sendMotorCommand(35, 65);
 }
 
-// Slow down this robot based on the number of rob
-int seperation(std::vector<OctoTag> tags, int sep) {
+// Slow down this robot based on the number of robots
+// within the minimum distance
+void seperation(std::vector<OctoTag> tags, int minDistR, int maxDist, int &LMS, int &RMS) {
     int close = 0;
-    int minDist = 30; //cm
+    int sep = 0;
     for (OctoTag tag: tags) {
         int tagDist = tag.tvec.at(2);
-        if (tagDist < minDist) {
-            close += minDist - tagDist;
+        if (tagDist < minDistR) {
+            LMS *= -1; //reverse direction
+            RMS *= -1;
+            break;
+        } else if (tagDist > maxDist) {
+            LMS += 5; //speed up a lil :3 HEHEHEHA GRRRRRR
+            RMS += 5;
         }
     }
-    close = (close / (minDist*3)) * sep;
-    return close;
+    close = (close / (minDistR*3)) * sep;
+    
 }
 
-void cohesion(std::vector<OctoTag> tags) {
+// Turn towards average angle of observed robots
+void cohesion(std::vector<OctoTag> tags, int &LMS, int &RMS) {
     double angle = 0;
+    int turn = 3;
     for (OctoTag tag: tags) {
         double tagAngle = atan2(tag.tvec.at(0), tag.tvec.at(2));
         angle += tagAngle;
     }
-    turnTowards(angle);
+    if (angle < -0.05) {
+        LMS -= turn;
+        RMS += turn;
+    } else if (angle > 0.05) {
+        LMS += turn; 
+        RMS -= turn;
+    }
 }
 
-void avoidWalls(std::vector<OctoTag> wallTags) {
+// Avoid da walls
+void avoidWalls(std::vector<OctoTag> wallTags, int minDistW, int &LMS, int &RMS) {
     double angle = 0;
-    int minDist = 30;
+    int turn = 3;
     for (OctoTag tag: wallTags) {
         int tagDist = tag.tvec.at(2);
-        if (tagDist < minDist) {
+        if (tagDist < minDistW) {
             double tagAngle = atan2(tag.tvec.at(0), tag.tvec.at(2));
             angle += tagAngle;
+        }
     }
-    turnAway(angle);
+    if (angle < -0.05) {
+        LMS += turn;
+        RMS -= turn;
+    }  else if (angle > 0.05) {
+        LMS -= turn; 
+        RMS += turn;
+    }
 }
 
-void turnTowards(double angle) {
-
+// Delete if only used once
+// Used in cohesion function, turns towards average angle of robots
+void turnTowards(double angle, int &LMS, int &RMS) {
+    if (angle < 0.0) {
+        LMS += 2;
+        RMS -= 2;
+    } else {
+        LMS -= 2; 
+        RMS += 2;
+    }
 }
 
-void turnAway(double angle) {
-    if (angle < 0) {
-        sendMotorCommand(LMS+60, RMS+60);
+// Delete if only used once
+// Used in avoidWalls function to turn away from walls
+void turnAway(double angle, int &LMS, int &RMS) {
+    if (angle < 0.0) {
+        LMS -= 2;
+        RMS += 2;
+    } else {
+        LMS += 2; 
+        RMS -= 2;
+    }
 }
 
-void boids() {
+// Check if any wall tags are less than the minimum allowed distance
+bool wallTooClose(std::vector<OctoTag> wallTags, int minDistW) {
+    for (OctoTag tag: wallTags) {
+        int tagDist = tag.tvec.at(2);
+        if (tagDist < minDistW) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void boids(std::vector<OctoTag> wallTags, std::vector<OctoTag> robotTags, int minDistR, int minDistW) {
+    int LMS = 60;
+    int RMS = 60;
     
+    if (wallTooClose(wallTags, minDistW)) {
+        avoidWalls(wallTags, 30, LMS, RMS);
+    } else {
+        seperation(robotTags, 30, 80, LMS, RMS);
+        cohesion(robotTags, LMS, RMS);
+    }
+    
+    sendMotorCommand(LMS, RMS);
+    //std::cout << "LMS = " << LMS << " | RMS =  " << RMS << std::endl;
 }
 	
 
@@ -216,18 +273,30 @@ int main(int argc, char** argv) {
         // Get tags in frame
         std::vector<OctoTag> tags;
         detectOctoTags(frame, config, tags);
+        
+        std::vector<OctoTag> wallTags;
+        std::vector<OctoTag> robotTags;
+        
+        for (OctoTag tag: tags) {
+            if (tag.color == 2 || tag.color == 5) {
+                wallTags.push_back(tag);
+            } else {
+                robotTags.push_back(tag);
+            }
+        }
 
         // Print distance and horizontal angle to camera
-        for (OctoTag tag: tags) {
+        for (OctoTag tag: robotTags) {
             tag.drawPose(frame, config);
             double angle = atan2(tag.tvec.at(0), tag.tvec.at(2));
             std::cout << "color " << tag.color << " target at (" << tag.tvec.at(2) << " cm, " << angle << " rad)" <<  std::endl;
         }
         
         if (tags.size() == 0) {
-            drive(0,0);
+            drive();
+            //sendMotorCommand(0, 0);
         } else {
-        
+            boids(wallTags, robotTags, 30,30);
         }
         // Drive motors if tag is detected
         //if (tags.size() > 0) {
