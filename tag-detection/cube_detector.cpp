@@ -8,7 +8,7 @@
 
 #include "../motor-control/motor_command.h"
 
-LogitechC270HD camera(0);
+LogitechC270HD camera(2);
 OctoTagConfiguration config(camera.parameters);
 
 void makeWindows() {
@@ -249,7 +249,144 @@ void boids(std::vector<OctoTag> wallTags, std::vector<OctoTag> robotTags, int mi
     sendMotorCommand(LMS, RMS);
     //std::cout << "LMS = " << LMS << " | RMS =  " << RMS << std::endl;
 }
-	
+
+struct Robot {
+
+    int tagCount = 0;
+    bool sides[4] {false, false, false, false};
+    cv::Point3d center {0, 0, 0};
+    cv::Point3d direction {0, 0, 0};
+
+    double distance; //  d
+    double angle; // theta
+    double heading; // phi
+
+    Robot(OctoTag& tag, float tagSize) {
+        addTag(tag, tagSize, true);
+    }
+
+    bool addTag(OctoTag& tag, float tagSize, bool bypassChecks = false) {
+        // Ensure yellow and purple tags are not passed
+        assert(tag.color != 2 && tag.color != 5);
+
+        // Determine robot center and forward direction from tag color
+        int index = tag.color - (tag.color > 2);
+        cv::Point3d tagCenter = cv::Point3d(tag.tvec.at(0), tag.tvec.at(1), tag.tvec.at(2)) - tag.normal*tagSize/2;
+        cv::Point3d tagDirection;
+        cv::Point3d up(0, 1, 0);
+        switch (index) {
+            case 0: tagDirection = tag.normal;           break;
+            case 1: tagDirection = tag.normal.cross(up); break;
+            case 2: tagDirection = -tag.normal;          break;
+            case 3: tagDirection = up.cross(tag.normal); break;
+        }
+
+        if (!bypassChecks) {
+            // Return if side color is already detected
+            int index = tag.color - (tag.color > 2);
+            if (sides[index]) return false;
+
+            // Return if center is not close enough
+            cv::Point3d diff = tagCenter - center;
+            if (diff.dot(diff) > tagSize*tagSize/4) return false;
+
+            // Return if normal directon is not within 60 degrees of robot direction
+            if (direction.dot(tagDirection) < 0.5) return false;
+        }
+
+
+        // Update center and direction
+        center = (center*tagCount + tagCenter)/(tagCount + 1);
+        direction = (direction*tagCount + tagDirection)/(tagCount + 1);
+
+        // Update distance, angle, and heading
+        distance = cv::norm(center);
+        angle = atan2(center.x, center.z);
+        heading = atan2(direction.x, direction.z);
+
+        // Mark side index and increment tag count
+        sides[index] = true;
+        tagCount++;
+        return true;
+    }
+
+};
+
+struct Wall {
+
+    int tagCount = 0;
+    int color;
+    cv::Point3d normal {0, 0, 0};
+    cv::Point3d center {0, 0, 0};
+
+    double distance;
+    double angle;
+
+    Wall(OctoTag& tag) {
+        color = tag.color;
+        addTag(tag, true);
+    }
+
+    bool addTag(OctoTag& tag, bool bypassChecks = false) {
+        if (!bypassChecks) {
+            // Return if colors mismatch
+            if (color != tag.color) return false;
+
+            // Return if normals differ by more than 60 degrees
+            if (normal.dot(tag.normal) < 0.5) return false;
+
+            // Return if the new tag's center is in front or behind the wall plane
+            cv::Point3d tagCenter(tag.tvec.at(0), tag.tvec.at(1), tag.tvec.at(2));
+            if (abs(normal.dot(tagCenter - center)) > 10) return false;
+        }
+
+        // Update center and normal
+        cv::Point3d tagCenter(tag.tvec.at(0), tag.tvec.at(1), tag.tvec.at(2));
+        center = (center*tagCount + tagCenter)/(tagCount + 1);
+        normal = (normal*tagCount + tag.normal)/(tagCount + 1);
+
+        // Update angle and distance
+        cv::Point3d forward(0, 0, 1);
+
+        // Increment tag count and return
+        tagCount++;
+        return true;
+    }
+};
+
+void detectRobotsAndWalls(cv::Mat& frame, const OctoTagConfiguration& config, std::vector<Robot>& robots, std::vector<Wall>& walls) {
+    // Get tags in frame
+    std::vector<OctoTag> tags;
+    detectOctoTags(frame, config, tags);
+    
+    // Process tag detections
+    for (OctoTag tag: tags) {
+        tag.drawPose(frame, config);
+
+        if (tag.color == 2 || tag.color == 5) {
+            // Attempt to add tag to existing walls
+            bool addedToWall = false;
+            for (Wall& wall: walls) {
+                addedToWall = wall.addTag(tag);
+                if (addedToWall) break;
+            }
+            
+            // Create new wall if no existing walls contain tag
+            if (!addedToWall) walls.push_back(Wall(tag));
+        } else {
+            // Attempt to add tag to existing robot
+            bool addedToRobot = false;
+            for (Robot& robot: robots) {
+                addedToRobot = robot.addTag(tag, config.tagSize);
+                if (addedToRobot) break;
+            }
+            
+            // Create new robot if no existing robots contain tag
+            if (!addedToRobot) robots.push_back(Robot(tag, config.tagSize));
+        }
+    }
+}
+
 
 int main(int argc, char** argv) {
     // Creates windows for displaying images
@@ -271,33 +408,37 @@ int main(int argc, char** argv) {
         }
 
         // Get tags in frame
-        std::vector<OctoTag> tags;
-        detectOctoTags(frame, config, tags);
+        // std::vector<OctoTag> tags;
+        // detectOctoTags(frame, config, tags);
         
-        std::vector<OctoTag> wallTags;
-        std::vector<OctoTag> robotTags;
-        
-        for (OctoTag tag: tags) {
-            if (tag.color == 2 || tag.color == 5) {
-                wallTags.push_back(tag);
-            } else {
-                robotTags.push_back(tag);
-            }
-        }
+        std::vector<Robot> robots;
+        std::vector<Wall> walls;
+        detectRobotsAndWalls(frame, config, robots, walls);
 
-        // Print distance and horizontal angle to camera
-        for (OctoTag tag: robotTags) {
-            tag.drawPose(frame, config);
-            double angle = atan2(tag.tvec.at(0), tag.tvec.at(2));
-            std::cout << "color " << tag.color << " target at (" << tag.tvec.at(2) << " cm, " << angle << " rad)" <<  std::endl;
+        std::cout << "Robots: " << std::endl;
+        for (Robot robot: robots) {
+            std::cout << robot.tagCount << " " << robot.distance << " " << robot.angle << " " << robot.heading << std::endl;
+        }
+        std::cout << std::endl;
+
+        std::cout << "Walls: " << std::endl;
+        for (Wall wall: walls) {
+            std::cout << wall.tagCount << " " << wall.distance << " " << wall.angle << std::endl;
         }
         
-        if (tags.size() == 0) {
-            drive();
+        // Print distance and horizontal angle to camera
+        // for (OctoTag tag: robotTags) {
+        //     tag.drawPose(frame, config);
+        //     double angle = atan2(tag.tvec.at(0), tag.tvec.at(2));
+        //     std::cout << "color " << tag.color << " target at (" << tag.tvec.at(2) << " cm, " << angle << " rad)" <<  std::endl;
+        // }
+        
+        //if (tags.size() == 0) {
+        //    drive();
             //sendMotorCommand(0, 0);
-        } else {
-            boids(wallTags, robotTags, 30,30);
-        }
+        //} else {
+        //    boids(wallTags, robotTags, 30,30);
+        //}
         // Drive motors if tag is detected
         //if (tags.size() > 0) {
         //    double distance = tags[0].tvec.at(2);
@@ -305,7 +446,7 @@ int main(int argc, char** argv) {
         //    followTheLeader(distance, angle);
         //} else sendMotorCommand(0, 0);
 
-        std::cout << std::endl;
+        //std::cout << std::endl;
 
         cv::imshow("camera", frame);
 

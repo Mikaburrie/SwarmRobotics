@@ -72,6 +72,7 @@ struct OctoTag {
     int color;
     std::vector<double> rvec;
     std::vector<double> tvec;
+    cv::Point3d normal;
 
     // Draw detected pose
     void drawPose(cv::InputOutputArray img, const OctoTagConfiguration& config) {
@@ -81,12 +82,13 @@ struct OctoTag {
             cv::line(img, projectedPoints.at(i), projectedPoints.at((i + 1)%4), cv::Scalar(255, 255, 255));
         cv::drawFrameAxes(img, config.cameraMatrix, std::vector<double>(), rvec, tvec, 60/tvec.at(2));
     }
+
 };
 
 /*
     Detects OctoTags in a frame
 */
-void detectOctoTags(const cv::Mat& frame, OctoTagConfiguration& config, std::vector<OctoTag>& tags) {
+void detectOctoTags(const cv::Mat& frame, const OctoTagConfiguration& config, std::vector<OctoTag>& tags) {
     bool drawMasking = config.maskingWindow.size() > 0;
     bool drawFeatures = config.featureWindow.size() > 0;
     bool drawCandidates = config.candidateWindow.size() > 0;
@@ -191,6 +193,18 @@ void detectOctoTags(const cv::Mat& frame, OctoTagConfiguration& config, std::vec
 
                 // Get pose of tag in camera frame
                 solvePnP(config.tagObjectPoints, cornerPoints, config.cameraMatrix, std::vector<double>(), tag.rvec, tag.tvec, false, cv::SOLVEPNP_IPPE_SQUARE);
+
+                // Get rotation angle and axis (kvec) from rvec
+                double theta = cv::norm(tag.rvec);
+                cv::Point3d kvec(
+                    tag.rvec.at(0)/theta,
+                    tag.rvec.at(1)/theta,
+                    tag.rvec.at(2)/theta
+                );
+
+                // Perform rotation to find normal
+                cv::Point3d normal(0, 0, 1);
+                tag.normal = normal*cos(theta) + kvec.cross(normal)*sin(theta) + kvec*kvec.dot(normal)*(1 - cos(theta));
 
                 // Store tag
                 tags.push_back(std::move(tag));

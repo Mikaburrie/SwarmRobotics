@@ -26,8 +26,8 @@ struct HSVColorRange {
         high = cv::Scalar(highHue - (highHue >= 180 ? 180 : 0), 255, 255);
     }
 
-    void inRange(cv::InputArray in, cv::OutputArray out) {
-        if (low[0] <= high[0] || range == 0) cv::inRange(in, low, high, out);
+    void inRange(cv::InputArray in, cv::OutputArray out) const {
+        if (low(0) <= high(0) || range == 0) cv::inRange(in, low, high, out);
         else {
             cv::Mat out1;
             cv::Mat out2;
