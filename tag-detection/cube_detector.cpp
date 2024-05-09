@@ -8,7 +8,7 @@
 
 #include "../motor-control/motor_command.h"
 
-LogitechC270HD camera(2);
+LogitechC270HD camera(0);
 OctoTagConfiguration config(camera.parameters);
 
 void makeWindows() {
