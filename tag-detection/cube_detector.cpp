@@ -199,7 +199,7 @@ struct Wall {
 
             // Return if the new tag's center is in front or behind the wall plane
             cv::Point3d tagCenter(tag.tvec.at(0), tag.tvec.at(1), tag.tvec.at(2));
-            if (abs(normal.dot(tagCenter - center)) > 10) return false;
+            if (abs(normal.dot(tagCenter - center)) > 20) return false;
         }
 
         // Update center and normal
@@ -217,119 +217,6 @@ struct Wall {
         return true;
     }
 };
-
-void drive() {
-    
-    //sendMotorCommand(80, -80);
-    //sleep(1);
-    sendMotorCommand(35, 65);
-}
-
-// Slow down this robot based on the number of robots
-// within the minimum distance
-void seperation(std::vector<Robot> robots, int minDistR, int maxDist, int &LMS, int &RMS) {
-    int close = 0;
-    int sep = 0;
-    for (Robot robot: robots) {
-        int robotDist = robot.distance;
-        if (robotDist < minDistR) {
-            LMS *= -1; //reverse direction
-            RMS *= -1;
-            break;
-        } else if (robotDist > maxDist) {
-            LMS += 5; //speed up a lil :3 HEHEHEHA GRRRRRR
-            RMS += 5;
-        }
-    }
-    close = (close / (minDistR*3)) * sep; //do i need this?
-    
-}
-
-// Turn towards average angle of observed robots
-void cohesion(std::vector<Robot> robots, int &LMS, int &RMS) {
-    double angle = 0;
-    int turn = 3;
-    for (Robot robot: robots) {
-        angle += robot.angle;
-    }
-    if (angle < -0.05) {
-        LMS -= turn;
-        RMS += turn;
-    } else if (angle > 0.05) {
-        LMS += turn; 
-        RMS -= turn;
-    }
-}
-
-// Avoid da walls
-void avoidWalls(std::vector<Wall> walls, int minDistW, int &LMS, int &RMS) {
-    double angle = 0;
-    int turn = 3;
-    for (Wall wall: walls) {
-        int wallDist = wall.distance;
-        if (wallDist < minDistW) {
-            angle += wall.angle;
-        }
-    }
-    if (angle < -0.05) {
-        LMS += turn;
-        RMS -= turn;
-    }  else if (angle > 0.05) {
-        LMS -= turn; 
-        RMS += turn;
-    }
-}
-
-// Delete if only used once
-// Used in cohesion function, turns towards average angle of robots
-void turnTowards(double angle, int &LMS, int &RMS) {
-    if (angle < 0.0) {
-        LMS += 2;
-        RMS -= 2;
-    } else {
-        LMS -= 2; 
-        RMS += 2;
-    }
-}
-
-// Delete if only used once
-// Used in avoidWalls function to turn away from walls
-void turnAway(double angle, int &LMS, int &RMS) {
-    if (angle < 0.0) {
-        LMS -= 2;
-        RMS += 2;
-    } else {
-        LMS += 2; 
-        RMS -= 2;
-    }
-}
-
-// Check if any wall tags are less than the minimum allowed distance
-// returns true if too close
-bool wallTooClose(std::vector<Wall> walls, int minDistW) {
-    for (Wall wall: walls) {
-        int wallDist = wall.distance;
-        if (wallDist < minDistW) {
-            return true;
-        }
-    }
-    return false;
-}
-
-void boids(std::vector<Wall> walls, std::vector<Robot> robots, int minDistR, int minDistW) {
-    int LMS = 60;
-    int RMS = 60;
-    
-    if (wallTooClose(walls, minDistW)) {
-        avoidWalls(walls, 30, LMS, RMS);
-    } else {
-        seperation(robots, 30, 80, LMS, RMS);
-        cohesion(robots, LMS, RMS);
-    }
-    
-    sendMotorCommand(LMS, RMS);
-    std::cout << "LMS = " << LMS << " | RMS =  " << RMS << std::endl;
-}
 
 void detectRobotsAndWalls(cv::Mat& frame, const OctoTagConfiguration& config, std::vector<Robot>& robots, std::vector<Wall>& walls) {
     // Get tags in frame
@@ -364,10 +251,91 @@ void detectRobotsAndWalls(cv::Mat& frame, const OctoTagConfiguration& config, st
     }
 }
 
+void separation(std::vector<Robot> robots, int minDistR, int maxDist, int& leftSpeed, int& rightSpeed) {
+    for (Robot& robot: robots) {
+        if (robot.distance < minDistR) {
+            leftSpeed = -leftSpeed;
+            rightSpeed = -rightSpeed;
+        } else if (robot.distance > maxDist) {
+            leftSpeed += 5;
+            rightSpeed += 5;
+        }
+        
+        if (robot.heading > 2.4 || robot.heading < -2.4) {
+            leftSpeed = -leftSpeed;
+        }
+    }
+}
+
+void cohesion(std::vector<Robot> robots, int& leftSpeed, int& rightSpeed) {
+    double angle = 0;
+    int turn = 5;
+    for (Robot& robot: robots) {
+        angle += robot.angle;
+    }
+    
+    if (angle < -0.05) {
+        leftSpeed -= turn;
+        rightSpeed += turn;
+    } else if (angle > 0.05) {
+        leftSpeed += turn;
+        rightSpeed -= turn;
+    }
+}
+
+void makeMovementAction(std::vector<Robot>& robots, std::vector<Wall>& walls) {
+    int leftSpeed = 0;
+    int rightSpeed = 0;
+    
+    if (walls.size() == 0 && robots.size() == 0) { // nothing seen, backup
+        leftSpeed = -60;
+    } else if (robots.size() == 0) { // walls but no robots
+        // Find closest wall
+        Wall& closest = walls.at(0);
+        for (Wall& wall: walls)
+            if (wall.distance < closest.distance) closest = wall;
+        
+        if (closest.distance < 60) { // too close, turn
+            if (closest.angle > 0) { // turn left
+                leftSpeed = 60;
+                rightSpeed = 80;
+            } else { // turn right
+                leftSpeed = 80;
+                rightSpeed = 60;
+            }
+        } else { // go forward
+            leftSpeed = 60;
+            rightSpeed = 60;
+        }
+    } else if (walls.size() == 0) { // robots but no walls
+        leftSpeed = 60;
+        rightSpeed = 60;
+        separation(robots, 50, 80, leftSpeed, rightSpeed);
+        cohesion(robots, leftSpeed, rightSpeed);
+    } else { // robots and walls
+        // Find closest wall
+        Wall& closest = walls.at(0);
+        for (Wall& wall: walls)
+            if (wall.distance < closest.distance) closest = wall;
+        
+        if (closest.distance < 60) {
+            rightSpeed = -60;
+        } else {
+            leftSpeed = 60;
+            rightSpeed = 60;
+            separation(robots, 50, 80, leftSpeed, rightSpeed);
+            cohesion(robots, leftSpeed, rightSpeed);
+        }
+    }
+    
+    sendMotorCommand(leftSpeed, rightSpeed);
+}
+
 int main(int argc, char** argv) {
     // Disable camera color adjustments for consistency
     camera.setAutoExposure(1);
     camera.setAutoWhiteBalance(0);
+    cv::waitKey(50);
     camera.setAutoExposure(0);
     camera.setExposure(336);
 
@@ -376,6 +344,9 @@ int main(int argc, char** argv) {
     
     // Open FIFO pipe for motor control
     openMotorControlFifo();
+    
+    auto switchTime = std::chrono::steady_clock::now();
+    int state = 0;
 
     int key = cv::waitKey(16);
     while (key != 27) { // Exit if Escape is pressed
@@ -397,30 +368,41 @@ int main(int argc, char** argv) {
         std::vector<Wall> walls;
         detectRobotsAndWalls(frame, config, robots, walls);
 
-        std::cout << "Robots: " << std::endl;
+        std::cout << "-----\nRobots: " << std::endl;
         for (Robot robot: robots) {
-            std::cout << robot.tagCount << " " << robot.distance << " " << robot.angle << " " << robot.heading << std::endl;
+            std::cout << "  " << robot.tagCount << " " << robot.distance << " " << robot.angle << " " << robot.heading << std::endl;
         }
         std::cout << std::endl;
 
         std::cout << "Walls: " << std::endl;
         for (Wall wall: walls) {
-            std::cout << wall.tagCount << " " << wall.distance << " " << wall.angle << std::endl;
+            std::cout << "  " << wall.tagCount << " " << wall.distance << " " << wall.angle << std::endl;
         }
         
-        if (robots.size() == 0 && !wallTooClose(walls, 30)) {
-            drive();
-            std::cout << " ggggaewrggwgqw" << std::endl;
-        } else {
-            boids(walls, robots, 30,30);
+        auto timeInState = std::chrono::steady_clock::now() - switchTime;
+        
+        if (state) { // Movement state
+            makeMovementAction(robots, walls);
+            
+            if (timeInState > std::chrono::duration<double>(3)) {
+                switchTime = std::chrono::steady_clock::now();
+                state = 0;
+            }
+        } else { // Stop state
+            sendMotorCommand(0, 0);
+            
+            if (timeInState > std::chrono::duration<double>(0.5)) {
+                switchTime = std::chrono::steady_clock::now();
+                state = 1;
+            }
         }
-
-        //std::cout << std::endl;
 
         cv::imshow("camera", frame);
 
         key = cv::waitKey(16);
     }
+    
+    sendMotorCommand(0, 0);
     
     // Close FIFO pipe
     closeMotorControlFifo();
