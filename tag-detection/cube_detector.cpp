@@ -129,7 +129,10 @@ struct Robot {
 
         // Determine robot center and forward direction from tag color
         int index = tag.color - (tag.color > 2);
+
         cv::Point3d tagCenter = cv::Point3d(tag.tvec.at(0), tag.tvec.at(1), tag.tvec.at(2)) - tag.normal*tagSize/2;
+        if (index == 1 || index == 3) tagCenter.y += tagSize*0.7;
+
         cv::Point3d tagDirection;
         cv::Point3d up(0, 1, 0);
         switch (index) {
@@ -146,7 +149,8 @@ struct Robot {
 
             // Return if center is not close enough
             cv::Point3d diff = tagCenter - center;
-            if (diff.dot(diff) > tagSize*tagSize/4) return false;
+            std::cout << diff << std::endl;
+            if (diff.dot(diff) > tagSize*tagSize/2) return false;
 
             // Return if normal directon is not within 60 degrees of robot direction
             if (direction.dot(tagDirection) < 0.5) return false;
@@ -204,7 +208,9 @@ struct Wall {
         normal = (normal*tagCount + tag.normal)/(tagCount + 1);
 
         // Update angle and distance
-        cv::Point3d forward(0, 0, 1);
+        distance = normal.dot(center)/normal.z;
+        cv::Point3d sinAngle = normal.cross(cv::Point3d(0, 0, 1));
+        angle = asin(sqrt(sinAngle.dot(sinAngle)))*(std::signbit(sinAngle.y) ? -1 : 1);
 
         // Increment tag count and return
         tagCount++;
@@ -359,6 +365,12 @@ void detectRobotsAndWalls(cv::Mat& frame, const OctoTagConfiguration& config, st
 }
 
 int main(int argc, char** argv) {
+    // Disable camera color adjustments for consistency
+    camera.setAutoExposure(1);
+    camera.setAutoWhiteBalance(0);
+    camera.setAutoExposure(0);
+    camera.setExposure(336);
+
     // Creates windows for displaying images
     makeWindows();
     

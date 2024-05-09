@@ -16,12 +16,12 @@ struct OctoTagConfiguration {
     // Settings for color masking
     int selectedColor = 0;
     std::vector<HSVColorRange> colors {
-        HSVColorRange(170, 15, 120, 120), // Red
-        HSVColorRange(14, 7, 110, 160), // Orange
+        HSVColorRange(175, 15, 120, 120), // Red
+        HSVColorRange(14, 4, 130, 160), // Orange
         HSVColorRange(27, 7, 120, 160), // Yellow
-        HSVColorRange(82, 18, 60, 100), // Green
-        HSVColorRange(111, 20, 130, 160), // Blue
-        HSVColorRange(140, 10, 60, 110) // Purple / violet
+        HSVColorRange(60, 18, 60, 100), // Green
+        HSVColorRange(111, 20, 70, 120), // Blue
+        HSVColorRange(155, 20, 55, 110) // Purple / violet
     };
 
     // Settings for detecting geometry
